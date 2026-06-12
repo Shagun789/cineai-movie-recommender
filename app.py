@@ -1,171 +1,107 @@
 import streamlit as st
 import requests
 
-BASE_URL = "http://127.0.0.1:8000"
-IMG = "https://image.tmdb.org/t/p/w500"
+# ======================
+# CONFIG
+# ======================
+st.set_page_config(page_title="CineAI", layout="wide")
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(
-    page_title="CineAI by Shagun",
-    layout="wide"
-)
+TMDB_API_KEY = st.secrets["TMDB_API_KEY"]
+TMDB_IMG = "https://image.tmdb.org/t/p/w500"
 
-# ---------------- HEADER ----------------
-st.markdown("## 🎬 CineAI - Movie Recommendation System")
-st.markdown("### Built with ❤️ by Shagun")
+# ======================
+# API FUNCTIONS
+# ======================
 
-# ---------------- SESSION STATE ----------------
-if "watchlist" not in st.session_state:
-    st.session_state.watchlist = []
-
-if "selected_movie" not in st.session_state:
-    st.session_state.selected_movie = None
-
-# ---------------- API FUNCTIONS ----------------
-def fetch_home(category):
+def fetch_movies(category):
     try:
-        res = requests.get(f"{BASE_URL}/home", params={"category": category})
-        return res.json() if res.status_code == 200 else []
-    except:
+        if category == "trending":
+            url = "https://api.themoviedb.org/3/trending/movie/day"
+            params = {"api_key": TMDB_API_KEY, "language": "en-US"}
+        else:
+            url = f"https://api.themoviedb.org/3/movie/{category}"
+            params = {
+                "api_key": TMDB_API_KEY,
+                "language": "en-US",
+                "page": 1
+            }
+
+        res = requests.get(url, params=params, timeout=10)
+        data = res.json()
+
+        return data.get("results", [])
+
+    except Exception as e:
+        st.error(f"API Error: {e}")
         return []
+
 
 def search_movies(query):
     try:
-        res = requests.get(f"{BASE_URL}/tmdb/search", params={"query": query})
+        url = "https://api.themoviedb.org/3/search/movie"
+        params = {
+            "api_key": TMDB_API_KEY,
+            "query": query,
+            "language": "en-US"
+        }
+
+        res = requests.get(url, params=params, timeout=10)
         return res.json().get("results", [])
-    except:
+
+    except Exception as e:
+        st.error(f"Search Error: {e}")
         return []
 
-def get_details(mid):
-    try:
-        return requests.get(f"{BASE_URL}/movie/id/{mid}").json()
-    except:
-        return {}
 
-def get_genre(mid):
-    try:
-        return requests.get(f"{BASE_URL}/recommend/genre", params={"tmdb_id": mid}).json()
-    except:
-        return []
+# ======================
+# UI HEADER
+# ======================
+st.title("🎬 CineAI - Movie Recommendation System")
+st.caption("Built with ❤️ by Shagun")
 
-def get_tfidf(title):
-    try:
-        return requests.get(f"{BASE_URL}/recommend/tfidf", params={"title": title}).json()
-    except:
-        return []
+# ======================
+# SIDEBAR
+# ======================
+st.sidebar.header("🔥 Explore Movies")
 
-# ---------------- SIDEBAR ----------------
-menu = st.sidebar.radio(
-    "Navigation",
-    ["🏠 Home", "🔍 Search", "🎯 Details", "❤️ Watchlist"]
+category = st.sidebar.selectbox(
+    "Select Category",
+    ["popular", "top_rated", "upcoming", "now_playing", "trending"]
 )
 
-categories = ["popular", "top_rated", "upcoming", "now_playing", "trending"]
+search_query = st.sidebar.text_input("Search Movies")
 
-# ---------------- HOME ----------------
-if menu == "🏠 Home":
+# ======================
+# DATA FETCH
+# ======================
+if search_query:
+    movies = search_movies(search_query)
+else:
+    movies = fetch_movies(category)
 
-    st.subheader("🔥 Explore Movies")
+# ======================
+# DEBUG (optional remove later)
+# ======================
+# st.write(movies)
 
-    category = st.selectbox("Select Category", categories)
+# ======================
+# DISPLAY MOVIES
+# ======================
+st.subheader(f"Showing results for: {search_query if search_query else category}")
 
-    movies = fetch_home(category) or []
+if not movies:
+    st.warning("No movies found 😢")
+else:
+    cols = st.columns(5)
 
-    cols = st.columns(6)
+    for i, movie in enumerate(movies):
+        with cols[i % 5]:
+            poster = movie.get("poster_path")
 
-    for i, m in enumerate(movies):
-        with cols[i % 6]:
-
-            if m.get("poster_url"):
-                st.image(m["poster_url"], use_container_width=True)
+            if poster:
+                st.image(TMDB_IMG + poster)
             else:
-                st.text("No Image")
+                st.image("https://via.placeholder.com/300x450")
 
-            st.caption(m.get("title", "Unknown"))
-
-            if st.button("View", key=f"view_{i}"):
-                st.session_state.selected_movie = m.get("tmdb_id")
-
-            if st.button("❤️", key=f"like_{i}"):
-                st.session_state.watchlist.append(m)
-
-# ---------------- SEARCH ----------------
-elif menu == "🔍 Search":
-
-    st.subheader("Search Movies")
-
-    query = st.text_input("Enter movie name")
-
-    if query:
-        results = search_movies(query)
-
-        cols = st.columns(6)
-
-        for i, m in enumerate(results):
-            with cols[i % 6]:
-
-                if m.get("poster_path"):
-                    st.image(f"{IMG}{m['poster_path']}", use_container_width=True)
-
-                st.caption(m.get("title"))
-
-                if st.button("Open", key=f"search_{i}"):
-                    st.session_state.selected_movie = m.get("id")
-
-# ---------------- DETAILS ----------------
-elif menu == "🎯 Details":
-
-    if not st.session_state.selected_movie:
-        st.warning("Please select a movie first from Home or Search.")
-    else:
-
-        mid = st.session_state.selected_movie
-        details = get_details(mid)
-
-        col1, col2 = st.columns([1, 2])
-
-        with col1:
-            if details.get("poster_url"):
-                st.image(details["poster_url"], use_container_width=True)
-
-        with col2:
-            st.title(details.get("title"))
-            st.write(details.get("overview"))
-            st.write("⭐ Rating:", details.get("vote_average"))
-
-        st.divider()
-
-        # GENRE RECOMMENDATIONS
-        st.subheader("🎯 Similar Movies")
-
-        genre_movies = get_genre(mid)
-
-        cols = st.columns(6)
-        for i, m in enumerate(genre_movies):
-            with cols[i % 6]:
-                st.image(m.get("poster_url"), use_container_width=True)
-                st.caption(m.get("title"))
-
-        # TF-IDF RECOMMENDATIONS
-        st.subheader("🤖 AI Recommendations")
-
-        recs = get_tfidf(details.get("title"))
-
-        for r in recs:
-            st.write(f"🎬 {r['title']}  ⭐ {r['score']}")
-
-# ---------------- WATCHLIST ----------------
-elif menu == "❤️ Watchlist":
-
-    st.subheader("Your Watchlist ❤️")
-
-    if not st.session_state.watchlist:
-        st.info("No movies added yet")
-    else:
-
-        cols = st.columns(6)
-
-        for i, m in enumerate(st.session_state.watchlist):
-            with cols[i % 6]:
-                st.image(m.get("poster_url"), use_container_width=True)
-                st.caption(m.get("title"))
+            st.write(movie.get("title", "No Title"))
+            st.caption(f"⭐ {movie.get('vote_average', 'N/A')}")

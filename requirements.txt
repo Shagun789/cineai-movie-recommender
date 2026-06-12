@@ -1,3 +1,4 @@
+streamlit
 fastapi
 uvicorn
 numpy
@@ -5,3 +6,4 @@ pandas
 httpx
 pydantic
 python-dotenv
+requests
